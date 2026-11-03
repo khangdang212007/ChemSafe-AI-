@@ -1,0 +1,21 @@
+{
+  "name": "chemsafe",
+  "version": "1.0.0",
+  "description": "ChemSafe AI - Hệ thống tra cứu an toàn hóa chất và giải bài tập hóa học thông minh.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "chemistry",
+    "ai",
+    "chemsafe",
+    "ollama"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

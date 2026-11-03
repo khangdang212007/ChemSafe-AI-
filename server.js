@@ -4,9 +4,17 @@ const path = require("path");
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
+const OLLAMA_URL = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/+$/, "");
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma3:4b";
 const OLLAMA_TIMEOUT_MS = 30000; // 30s timeout tránh treo request
+
+const buildOllamaUrl = (endpoint) => {
+    try {
+        return new URL(endpoint, `${OLLAMA_URL}/`).toString();
+    } catch {
+        return `${OLLAMA_URL}/${endpoint.replace(/^\//, "")}`;
+    }
+};
 
 // Middleware phân tích dữ liệu JSON và URL-encoded
 app.use(express.json({ limit: "10mb" }));
@@ -22,8 +30,8 @@ app.get("/api/health", async (req, res) => {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        
-        const response = await fetch(`${OLLAMA_URL}/api/tags`, {
+
+        const response = await fetch(buildOllamaUrl("/api/tags"), {
             signal: controller.signal
         });
         clearTimeout(timeout);
@@ -41,7 +49,7 @@ app.get("/api/health", async (req, res) => {
             });
         }
     } catch (err) {
-        // Ollama chưa chạy
+        console.warn("Health check: Ollama unavailable:", err?.message || err);
     }
 
     res.json({
@@ -56,11 +64,19 @@ app.get("/api/health", async (req, res) => {
 // ================================
 app.post("/api/chat", async (req, res) => {
     try {
-        const { message, history = [] } = req.body;
+        const body = req.body || {};
+        const { message, history = [] } = body;
+        const trimmedMessage = typeof message === "string" ? message.trim() : "";
 
-        if (!message || !message.trim()) {
+        if (!trimmedMessage) {
             return res.status(400).json({
                 error: "Tin nhắn không được để trống."
+            });
+        }
+
+        if (!Array.isArray(history)) {
+            return res.status(400).json({
+                error: "Dữ liệu lịch sử trò chuyện không hợp lệ."
             });
         }
 
@@ -86,7 +102,7 @@ Quy tắc trình bày khi giải bài tập:
 Hãy trả lời bằng tiếng Việt sư phạm, dễ hiểu, súc tích và chính xác.`;
 
         // Giới hạn 10 tin nhắn gần nhất để giữ context tối ưu
-        const recentHistory = Array.isArray(history) ? history.slice(-10) : [];
+        const recentHistory = history.slice(-10).filter(item => item && typeof item === "object");
 
         // Tạo cấu trúc messages gửi sang Ollama
         const messages = [
@@ -95,12 +111,12 @@ Hãy trả lời bằng tiếng Việt sư phạm, dễ hiểu, súc tích và c
                 content: systemPrompt
             },
             ...recentHistory.map(item => ({
-                role: item.role === "bot" ? "assistant" : (item.role || "user"),
+                role: item.role === "bot" ? "assistant" : (typeof item.role === "string" ? item.role : "user"),
                 content: String(item.content || "")
             })),
             {
                 role: "user",
-                content: message.trim()
+                content: trimmedMessage
             }
         ];
 
@@ -111,7 +127,7 @@ Hãy trả lời bằng tiếng Việt sư phạm, dễ hiểu, súc tích và c
         }, OLLAMA_TIMEOUT_MS);
 
         try {
-            const ollamaResponse = await fetch(`${OLLAMA_URL}/api/chat`, {
+            const ollamaResponse = await fetch(buildOllamaUrl("/api/chat"), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -158,7 +174,7 @@ Hãy trả lời bằng tiếng Việt sư phạm, dễ hiểu, súc tích và c
     } catch (error) {
         console.error("Server Error:", error);
         res.status(500).json({
-            error: "Lỗi nội bộ máy chủ: " + error.message
+            error: "Lỗi nội bộ máy chủ: " + (error && error.message ? error.message : String(error))
         });
     }
 });
